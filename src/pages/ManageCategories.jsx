@@ -17,6 +17,7 @@ function ManageCategories() {
   const fetchCategories = async () => {
     try {
       setLoading(true);
+      setError(null);
       console.log('Fetching categories from:', API_ENDPOINTS.CATEGORIES);
       
       let response;
@@ -37,8 +38,11 @@ function ManageCategories() {
       
       console.log('Response status:', response.status);
       console.log('Response ok:', response.ok);
+      console.log('Response headers:', response.headers);
       
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Error response:', errorText);
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       
@@ -46,24 +50,50 @@ function ManageCategories() {
       console.log('Raw API response:', data);
       console.log('Type of data:', typeof data);
       console.log('Is data an array?', Array.isArray(data));
+      console.log('Data keys:', Object.keys(data || {}));
       
-      // Ensure data is an array
+      // Ensure data is an array - handle different response structures
       let categoriesArray = [];
+      
+      // Check all possible response structures
       if (Array.isArray(data)) {
+        console.log('✅ Data is directly an array');
         categoriesArray = data;
-      } else if (data && Array.isArray(data.categories)) {
-        categoriesArray = data.categories;
-      } else if (data && Array.isArray(data.data)) {
+      } else if (data && data.success && Array.isArray(data.data)) {
+        console.log('✅ Found data in data.data array');
         categoriesArray = data.data;
+      } else if (data && Array.isArray(data.categories)) {
+        console.log('✅ Found data in data.categories array');
+        categoriesArray = data.categories;
       } else if (data && Array.isArray(data.items)) {
+        console.log('✅ Found data in data.items array');
         categoriesArray = data.items;
+      } else if (data && data.data && typeof data.data === 'object' && !Array.isArray(data.data)) {
+        console.log('⚠️ data.data is an object, not an array. Converting...');
+        // If data.data is an object with category properties, extract them
+        if (data.data.categories && Array.isArray(data.data.categories)) {
+          categoriesArray = data.data.categories;
+        } else {
+          categoriesArray = [data.data];
+        }
+      } else if (data && typeof data === 'object' && data.success === false) {
+        console.log('❌ API returned error response');
+        throw new Error(data.message || 'Failed to fetch categories');
       } else if (data && typeof data === 'object') {
-        // If it's a single object, wrap it in an array
+        console.log('⚠️ Data is a single object, wrapping in array');
         categoriesArray = [data];
+      } else {
+        console.log('❌ Unknown data structure');
       }
       
       console.log('Processed categories array:', categoriesArray);
       console.log('Categories count:', categoriesArray.length);
+      
+      if (categoriesArray.length > 0) {
+        console.log('First category sample:', categoriesArray[0]);
+      } else {
+        console.warn('⚠️ Categories array is empty! Raw data was:', data);
+      }
       
       setCategories(categoriesArray);
       setError(null);
@@ -167,15 +197,22 @@ function ManageCategories() {
         <button 
           className="test-api-button" 
           onClick={() => {
+            console.log('=== MANUAL API TEST ===');
             console.log('Testing direct API call...');
             fetch('https://app.boldtribe.in/api/categories', { mode: 'cors' })
               .then(res => {
                 console.log('Direct API response status:', res.status);
+                console.log('Direct API response ok:', res.ok);
                 return res.json();
               })
               .then(data => {
                 console.log('Direct API data:', data);
-                alert('Check console for API response');
+                console.log('Data type:', typeof data);
+                console.log('Is array?:', Array.isArray(data));
+                if (data && typeof data === 'object') {
+                  console.log('Data keys:', Object.keys(data));
+                }
+                alert('Check console for API response. Data received: ' + JSON.stringify(data).substring(0, 200));
               })
               .catch(err => {
                 console.error('Direct API error:', err);
@@ -183,9 +220,19 @@ function ManageCategories() {
               });
           }}
         >
-          🧪 Test API Direct
+          🧪 Test API
         </button>
       </div>
+
+      {loading && (
+        <div className="loading-info">⏳ Loading categories...</div>
+      )}
+
+      {!loading && categories.length === 0 && !error && (
+        <div className="debug-info">
+          ℹ️ No categories found. Check console for API response details.
+        </div>
+      )}
 
       {filteredCategories.length === 0 ? (
         <div className="no-categories">
@@ -199,72 +246,60 @@ function ManageCategories() {
           )}
         </div>
       ) : (
-        <div className="categories-table-container">
-          <table className="categories-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Name</th>
-                <th>Description</th>
-                <th>Items Count</th>
-                <th>Created Date</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredCategories.map((category) => (
-                <tr key={category.id || category._id}>
-                  <td>{category.id || category._id || 'N/A'}</td>
-                  <td>
-                    <div className="category-name">
-                      <span className="category-icon">{category.icon || '📂'}</span>
-                      {category.name || category.title || 'Untitled Category'}
-                    </div>
-                  </td>
-                  <td>
-                    <div className="description-cell">
-                      {category.description || 'No description available'}
-                    </div>
-                  </td>
-                  <td>
-                    <span className="items-count">
-                      {category.itemCount || category.items?.length || 0}
+        <div className="categories-column-list">
+          {filteredCategories.map((category) => (
+            <div key={category.id || category._id} className="category-row-item">
+              <div className="category-row-content">
+                <div className="category-icon-box">
+                  {category.icon || '📂'}
+                </div>
+                
+                <div className="category-info">
+                  <h3 className="category-title">{category.name || category.title || 'Untitled Category'}</h3>
+                  <p className="category-desc">{category.description || 'No description available'}</p>
+                  
+                  <div className="category-meta">
+                    <span className="meta-item">
+                      <span className="meta-icon">🆔</span>
+                      <span>ID: {category.id || category._id || 'N/A'}</span>
                     </span>
-                  </td>
-                  <td>
-                    {category.createdAt ? 
-                      new Date(category.createdAt).toLocaleDateString() : 
-                      'Unknown'
-                    }
-                  </td>
-                  <td>
-                    <span className={`status-badge ${(category.status || 'active').toLowerCase()}`}>
-                      {category.status || 'Active'}
+                    <span className="meta-item">
+                      <span className="meta-icon">📋</span>
+                      <span>{category.itemCount || category.items?.length || 0} items</span>
                     </span>
-                  </td>
-                  <td>
-                    <div className="action-buttons">
-                      <button
-                        className="action-btn update-btn"
-                        onClick={() => handleEdit(category.id || category._id)}
-                        title="Update Category"
-                      >
-                        ✏️ Update
-                      </button>
-                      <button
-                        className="action-btn delete-btn"
-                        onClick={() => handleDelete(category.id || category._id)}
-                        title="Delete Category"
-                      >
-                        🗑️ Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    {category.createdAt && (
+                      <span className="meta-item">
+                        <span className="meta-icon">📅</span>
+                        <span>{new Date(category.createdAt).toLocaleDateString()}</span>
+                      </span>
+                    )}
+                    {category.status && (
+                      <span className={`status-tag ${(category.status || 'active').toLowerCase()}`}>
+                        {category.status}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              
+              <div className="category-row-actions">
+                <button
+                  className="action-btn update-btn"
+                  onClick={() => handleEdit(category.id || category._id)}
+                  title="Update Category"
+                >
+                  ✏️ Update
+                </button>
+                <button
+                  className="action-btn delete-btn"
+                  onClick={() => handleDelete(category.id || category._id)}
+                  title="Delete Category"
+                >
+                  🗑️ Delete
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>

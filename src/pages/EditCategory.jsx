@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { API_ENDPOINTS } from '../config/api';
+import { API_ENDPOINTS, getAuthToken } from '../config/api';
 import './EditCategory.css';
 
 function EditCategory() {
@@ -36,37 +36,80 @@ function EditCategory() {
   const fetchCategoryDetails = async () => {
     try {
       setLoading(true);
-      const response = await fetch(API_ENDPOINTS.CATEGORY_BY_ID(id));
+      console.log('Fetching category with ID:', id);
+      console.log('API endpoint:', API_ENDPOINTS.CATEGORY_BY_ID(id));
+      
+      const token = getAuthToken();
+      const headers = {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      let response;
+      try {
+        // Try with proxy first
+        response = await fetch(API_ENDPOINTS.CATEGORY_BY_ID(id), { headers });
+      } catch (proxyError) {
+        console.log('Proxy failed, trying direct URL:', proxyError);
+        // If proxy fails, try direct URL
+        response = await fetch(`https://app.boldtribe.in/api/categories/${id}`, {
+          mode: 'cors',
+          headers
+        });
+      }
+      
+      console.log('Response status:', response.status);
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       
-      const category = await response.json();
+      const result = await response.json();
+      console.log('Raw API response:', result);
+      
+      // Handle different response structures
+      let category;
+      if (result.success && result.data) {
+        category = result.data;
+      } else if (result.data) {
+        category = result.data;
+      } else {
+        category = result;
+      }
+      
+      console.log('Extracted category data:', category);
       
       // Prefill form data
       setFormData({
-        categoryName: category.name || category.title || '',
+        categoryName: category.category?.name || category.name || category.title || '',
         itemName: category.itemName || '',
         description: category.description || ''
       });
 
-      // Set existing image
+      // Set existing image - handle full URL or path
       if (category.imageUrl || category.image) {
-        setExistingImageUrl(category.imageUrl || category.image);
-        setImagePreview(category.imageUrl || category.image);
+        const imageUrl = category.imageUrl || category.image;
+        const fullImageUrl = imageUrl.startsWith('http') ? imageUrl : `https://app.boldtribe.in${imageUrl}`;
+        setExistingImageUrl(fullImageUrl);
+        setImagePreview(fullImageUrl);
       }
 
-      // Set existing audio
-      if (category.audioUrl || category.audio) {
-        setExistingAudioUrl(category.audioUrl || category.audio);
-        setAudioURL(category.audioUrl || category.audio);
+      // Set existing audio/voice - handle full URL or path
+      if (category.voiceUrl || category.audioUrl || category.audio || category.voice) {
+        const audioUrl = category.voiceUrl || category.audioUrl || category.audio || category.voice;
+        const fullAudioUrl = audioUrl.startsWith('http') ? audioUrl : `https://app.boldtribe.in${audioUrl}`;
+        setExistingAudioUrl(fullAudioUrl);
+        setAudioURL(fullAudioUrl);
       }
 
       setError(null);
     } catch (err) {
       console.error('Error fetching category details:', err);
-      setError('Failed to load category details. Please try again.');
+      setError(`Failed to load category details: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -177,19 +220,64 @@ function EditCategory() {
     
     setIsSubmitting(true);
     
-    // Simulate API update call
-    setTimeout(() => {
-      console.log('Updated Category Data:', {
-        id,
-        ...formData,
-        imageFile: imageFile || 'existing image',
-        audioBlob: audioBlob || 'existing audio'
+    try {
+      // Create FormData for file uploads
+      const formDataToSend = new FormData();
+      
+      // Add text fields
+      formDataToSend.append('categoryName', formData.categoryName);
+      formDataToSend.append('itemName', formData.itemName);
+      formDataToSend.append('description', formData.description || `${formData.itemName} picture and sound`);
+      formDataToSend.append('isPublic', 'true');
+      
+      // Add new image file if uploaded
+      if (imageFile) {
+        formDataToSend.append('image', imageFile);
+      }
+      
+      // Add new audio file if recorded
+      if (audioBlob) {
+        formDataToSend.append('voice', audioBlob, 'recording.wav');
+      }
+      
+      console.log('Updating category with ID:', id);
+      
+      const token = getAuthToken();
+      const headers = {};
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      // TODO: Replace with actual update endpoint when available
+      // For now, using create endpoint - replace with PUT/PATCH endpoint
+      const updateEndpoint = `https://app.boldtribe.in/api/items/${id}`;
+      
+      const response = await fetch(updateEndpoint, {
+        method: 'PUT', // or 'PATCH' depending on your API
+        mode: 'cors',
+        headers,
+        body: formDataToSend,
       });
       
-      alert('Category updated successfully!');
-      setIsSubmitting(false);
+      console.log('Update response status:', response.status);
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+      }
+      
+      const result = await response.json();
+      console.log('Category updated successfully:', result);
+      
+      alert(`Category "${formData.itemName}" updated successfully!`);
       navigate('/customization/manage-categories');
-    }, 1500);
+    } catch (err) {
+      console.error('Error updating category:', err);
+      alert(`Failed to update category: ${err.message}`);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   if (loading) {

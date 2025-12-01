@@ -138,18 +138,20 @@ function AddCategory() {
       // Create FormData for file uploads
       const formDataToSend = new FormData();
       
-      // Add text fields
+      // Add text fields (based on API response structure)
       formDataToSend.append('categoryName', formData.categoryName);
       formDataToSend.append('itemName', formData.itemName);
+      formDataToSend.append('description', `${formData.itemName} picture and sound`);
+      formDataToSend.append('isPublic', 'true');
       
       // Add image file
       if (imageFile) {
         formDataToSend.append('image', imageFile);
       }
       
-      // Add audio file
+      // Add audio file (voice recording)
       if (audioBlob) {
-        formDataToSend.append('audio', audioBlob, 'recording.wav');
+        formDataToSend.append('voice', audioBlob, 'recording.wav');
       }
       
       // Make API call
@@ -160,11 +162,29 @@ function AddCategory() {
         headers['Authorization'] = `Bearer ${token}`;
       }
       
-      const response = await fetch(API_ENDPOINTS.CREATE_ITEM, {
-        method: 'POST',
-        headers,
-        body: formDataToSend,
-      });
+      console.log('Submitting to:', API_ENDPOINTS.CREATE_ITEM);
+      console.log('With token:', token ? 'Yes' : 'No');
+      
+      let response;
+      try {
+        // Try proxy endpoint first
+        response = await fetch(API_ENDPOINTS.CREATE_ITEM, {
+          method: 'POST',
+          headers,
+          body: formDataToSend,
+        });
+      } catch (proxyError) {
+        console.log('Proxy failed, trying direct URL:', proxyError);
+        // If proxy fails, try direct URL
+        response = await fetch('https://app.boldtribe.in/api/items/create', {
+          method: 'POST',
+          mode: 'cors',
+          headers,
+          body: formDataToSend,
+        });
+      }
+      
+      console.log('Response status:', response.status);
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -172,22 +192,32 @@ function AddCategory() {
       }
       
       const result = await response.json();
-      console.log('Category created successfully:', result);
+      console.log('Item created successfully:', result);
       
-      // Show success message
-      alert('Category posted successfully!');
-      
-      // Reset form
-      setFormData({ categoryName: '', itemName: '' });
-      setImageFile(null);
-      setImagePreview(null);
-      setAudioBlob(null);
-      setAudioURL(null);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
+      // Check if the response indicates success
+      if (result.success) {
+        const itemData = result.data;
+        
+        // Show detailed success message
+        alert(`Learning item "${itemData.itemName}" created successfully in category "${itemData.category?.name}"!\n\nItem ID: ${itemData.id}\nCategory: ${itemData.category?.name}\nImage: ${itemData.imageUrl ? 'Uploaded' : 'None'}\nVoice: ${itemData.voiceUrl ? 'Uploaded' : 'None'}`);
+        
+        // Reset form
+        setFormData({ categoryName: '', itemName: '' });
+        setImageFile(null);
+        setImagePreview(null);
+        setAudioBlob(null);
+        setAudioURL(null);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
+        
+        // Navigate back to customization after a short delay
+        setTimeout(() => {
+          navigate('/customization');
+        }, 2000);
+      } else {
+        throw new Error(result.message || 'Failed to create learning item');
       }
-      
-      // Navigate back to customization
       navigate('/customization');
       
     } catch (error) {

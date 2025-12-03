@@ -3,6 +3,39 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { API_ENDPOINTS, getAuthToken } from '../config/api';
 import './EditCategory.css';
 
+// Normalize API responses so we consistently get { category, item }
+const resolveItemResponse = (apiResult, itemId) => {
+  const idString = String(itemId);
+  const root = apiResult?.data ?? apiResult;
+
+  let category = root?.category ?? root?.data?.category ?? null;
+  let item = root?.item ?? root?.data?.item ?? null;
+
+  const pickItem = (items) => {
+    if (!Array.isArray(items)) return null;
+    return items.find((it) => String(it.id) === idString) || items[0] || null;
+  };
+
+  if (!item && Array.isArray(root?.items)) {
+    item = pickItem(root.items);
+  }
+
+  if (!item && category && Array.isArray(category.items)) {
+    item = pickItem(category.items);
+  }
+
+  if (!category && item?.category) {
+    category = item.category;
+  }
+
+  // If everything else fails, treat root as the item (legacy responses)
+  if (!item && root && typeof root === 'object') {
+    item = root;
+  }
+
+  return { category, item };
+};
+
 function EditCategory() {
   const navigate = useNavigate();
   const { id } = useParams();
@@ -51,11 +84,11 @@ function EditCategory() {
       
       let response;
       try {
-        // Try with proxy first
+        // Try with proxy/base URL first (items/:id)
         response = await fetch(API_ENDPOINTS.CATEGORY_BY_ID(id), { headers });
       } catch (proxyError) {
-        console.log('Proxy failed, trying direct URL:', proxyError);
-        // If proxy fails, try direct URL
+        console.log('Proxy failed, trying direct URL for item:', proxyError);
+        // If proxy fails, try direct URL for item
         response = await fetch(`https://app.boldtribe.in/api/categories/${id}`, {
           mode: 'cors',
           headers
@@ -71,36 +104,34 @@ function EditCategory() {
       const result = await response.json();
       console.log('Raw API response:', result);
       
-      // Handle different response structures
-      let category;
-      if (result.success && result.data) {
-        category = result.data;
-      } else if (result.data) {
-        category = result.data;
-      } else {
-        category = result;
+      // Normalize response so we always work with category + item
+      const { category: categoryData, item: itemData } = resolveItemResponse(result, id);
+      
+      if (!itemData) {
+        throw new Error('No item data found in API response');
       }
       
-      console.log('Extracted category data:', category);
+      console.log('Resolved category data:', categoryData);
+      console.log('Resolved item data:', itemData);
       
       // Prefill form data
       setFormData({
-        categoryName: category.category?.name || category.name || category.title || '',
-        itemName: category.itemName || '',
-        description: category.description || ''
+        categoryName: categoryData?.name || itemData.category?.name || itemData.name || itemData.title || '',
+        itemName: itemData.itemName || itemData.name || '',
+        description: itemData.description || ''
       });
 
       // Set existing image - handle full URL or path
-      if (category.imageUrl || category.image) {
-        const imageUrl = category.imageUrl || category.image;
+      if (itemData.imageUrl || itemData.image) {
+        const imageUrl = itemData.imageUrl || itemData.image;
         const fullImageUrl = imageUrl.startsWith('http') ? imageUrl : `https://app.boldtribe.in${imageUrl}`;
         setExistingImageUrl(fullImageUrl);
         setImagePreview(fullImageUrl);
       }
 
       // Set existing audio/voice - handle full URL or path
-      if (category.voiceUrl || category.audioUrl || category.audio || category.voice) {
-        const audioUrl = category.voiceUrl || category.audioUrl || category.audio || category.voice;
+      if (itemData.voiceUrl || itemData.audioUrl || itemData.audio || itemData.voice) {
+        const audioUrl = itemData.voiceUrl || itemData.audioUrl || itemData.audio || itemData.voice;
         const fullAudioUrl = audioUrl.startsWith('http') ? audioUrl : `https://app.boldtribe.in${audioUrl}`;
         setExistingAudioUrl(fullAudioUrl);
         setAudioURL(fullAudioUrl);
@@ -240,7 +271,7 @@ function EditCategory() {
         formDataToSend.append('voice', audioBlob, 'recording.wav');
       }
       
-      console.log('Updating category with ID:', id);
+      console.log('Updating item/category with ID:', id);
       
       const token = getAuthToken();
       const headers = {};
@@ -249,16 +280,24 @@ function EditCategory() {
         headers['Authorization'] = `Bearer ${token}`;
       }
       
-      // TODO: Replace with actual update endpoint when available
-      // For now, using create endpoint - replace with PUT/PATCH endpoint
-      const updateEndpoint = `https://app.boldtribe.in/api/items/${id}`;
-      
-      const response = await fetch(updateEndpoint, {
-        method: 'PUT', // or 'PATCH' depending on your API
-        mode: 'cors',
-        headers,
-        body: formDataToSend,
-      });
+      // Use items/:id endpoint for updating
+      let response;
+      try {
+        // Try via configured base URL first
+        response = await fetch(API_ENDPOINTS.ITEM_BY_ID(id), {
+          method: 'PUT',
+          headers,
+          body: formDataToSend,
+        });
+      } catch (proxyError) {
+        console.log('Proxy/base URL PUT failed, trying direct URL for item:', proxyError);
+        response = await fetch(`https://app.boldtribe.in/api/items/${id}`, {
+          method: 'PUT',
+          mode: 'cors',
+          headers,
+          body: formDataToSend,
+        });
+      }
       
       console.log('Update response status:', response.status);
       
@@ -268,9 +307,9 @@ function EditCategory() {
       }
       
       const result = await response.json();
-      console.log('Category updated successfully:', result);
+      console.log('Item/category updated successfully:', result);
       
-      alert(`Category "${formData.itemName}" updated successfully!`);
+      alert(`Item "${formData.itemName}" updated successfully!`);
       navigate('/customization/manage-categories');
     } catch (err) {
       console.error('Error updating category:', err);

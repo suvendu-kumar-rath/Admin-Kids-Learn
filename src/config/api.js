@@ -9,7 +9,8 @@ export const API_ENDPOINTS = {
   LOGIN: `${API_BASE_URL}/auth/admin/login`,
   CATEGORIES: `${API_BASE_URL}/categories`,
   CATEGORY_BY_ID: (id) => `${API_BASE_URL}/categories/${id}`,
-  CREATE_ITEM: `${API_BASE_URL}/items/create`,
+  
+  ITEM_BY_ID: (id) => `${API_BASE_URL}/items/${id}`,
   // Add more endpoints here as needed
 };
 

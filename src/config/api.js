@@ -11,6 +11,7 @@ export const API_ENDPOINTS = {
   CATEGORY_BY_ID: (id) => `${API_BASE_URL}/categories/${id}`,
   
   ITEM_BY_ID: (id) => `${API_BASE_URL}/items/${id}`,
+  CREATE_ITEM: `${API_BASE_URL}/items/create`,
   // Add more endpoints here as needed
 };
 

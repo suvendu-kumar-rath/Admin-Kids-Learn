@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { API_ENDPOINTS, getAuthToken } from '../config/api';
 import './AddCategory.css';
-
+//
 function AddCategory() {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
